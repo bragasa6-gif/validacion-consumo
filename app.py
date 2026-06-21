@@ -8,12 +8,75 @@ from openpyxl import load_workbook
 
 
 st.set_page_config(
-    page_title="Validación Consumo",
+    page_title="Validación de Consumo",
     page_icon="🦐",
     layout="centered"
 )
 
 BASE_FILE = "tabla_base.xlsx"
+
+
+st.markdown(
+    """
+    <style>
+    .main-title {
+        text-align: center;
+        font-size: 38px;
+        font-weight: 800;
+        margin-bottom: 0px;
+    }
+    .subtitle {
+        text-align: center;
+        color: #6b7280;
+        font-size: 16px;
+        margin-bottom: 25px;
+    }
+    .card {
+        background: #ffffff;
+        padding: 18px;
+        border-radius: 18px;
+        box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+        margin-bottom: 14px;
+        border: 1px solid #eef2f7;
+    }
+    .metric-label {
+        color: #6b7280;
+        font-size: 14px;
+        margin-bottom: 4px;
+    }
+    .metric-value {
+        font-size: 30px;
+        font-weight: 800;
+        color: #111827;
+    }
+    .semaforo {
+        text-align: center;
+        font-size: 42px;
+        font-weight: 900;
+        padding: 24px;
+        border-radius: 24px;
+        margin-bottom: 20px;
+    }
+    .verde {
+        background: #dcfce7;
+        color: #166534;
+    }
+    .amarillo {
+        background: #fef9c3;
+        color: #854d0e;
+    }
+    .rojo {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .gris {
+        background: #f3f4f6;
+        color: #374151;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
 def to_float(value):
@@ -79,7 +142,6 @@ def load_tables_from_bytes(file_bytes):
         values_only=True
     ):
         peso, frio, calor = row
-
         peso = to_float(peso)
 
         if pd.isna(peso):
@@ -103,7 +165,6 @@ def load_tables_from_bytes(file_bytes):
         values_only=True
     ):
         peso, calor, frio = row
-
         peso = to_float(peso)
 
         if pd.isna(peso):
@@ -144,8 +205,41 @@ def safe_div(a, b):
     return a / b
 
 
-st.title("Validación de Población por Consumo")
-st.caption("App web móvil para ingresar datos y calcular según la hoja Tabla del Excel.")
+def metric_card(label, value):
+    st.markdown(
+        f"""
+        <div class="card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def semaforo_html(estado):
+    if "Verde" in estado:
+        css = "verde"
+    elif "Amarillo" in estado:
+        css = "amarillo"
+    elif "Rojo" in estado:
+        css = "rojo"
+    else:
+        css = "gris"
+
+    st.markdown(
+        f"""
+        <div class="semaforo {css}">
+            {estado}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+st.markdown("<div class='main-title'>🦐 Validación de Consumo</div>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Cálculo rápido de población por consumo desde el celular</div>", unsafe_allow_html=True)
+
 
 with st.sidebar:
     st.header("Tabla base")
@@ -188,30 +282,21 @@ except Exception as exc:
 
 
 with st.expander("Ver tablas de referencia", expanded=False):
-    st.write("Tabla Normal: Peso, NormalFrio, NormalCalor")
-    st.dataframe(normal_table, width="stretch", hide_index=True)
+    st.write("Tabla Normal")
+    st.dataframe(normal_table, hide_index=True)
 
-    st.write("Tabla Mínima: Peso, MinCalor, MinFrio")
-    st.dataframe(min_table, width="stretch", hide_index=True)
+    st.write("Tabla Mínima")
+    st.dataframe(min_table, hide_index=True)
 
 
 st.subheader("Ingreso de datos")
 
 with st.form("validacion_form"):
-    fecha = st.date_input(
-        "Fecha",
-        value=date.today()
-    )
+    fecha = st.date_input("Fecha", value=date.today())
 
-    psc = st.text_input(
-        "PSC / Piscina",
-        value=""
-    )
+    psc = st.text_input("Piscina / PSC", value="")
 
-    marca = st.text_input(
-        "Marca alimento",
-        value=""
-    )
+    marca = st.text_input("Marca alimento", value="")
 
     peso_actual = st.number_input(
         "Peso actual (g)",
@@ -236,7 +321,7 @@ with st.form("validacion_form"):
     )
 
     animales_vivos = st.number_input(
-        "Animales vivos reportados (AL)",
+        "Animales vivos reportados",
         min_value=0.0,
         value=0.0,
         step=1000.0
@@ -256,21 +341,7 @@ with st.form("validacion_form"):
         horizontal=True
     )
 
-    umbral_verde = st.number_input(
-        "Semáforo verde hasta +/- %",
-        min_value=0.0,
-        value=5.0,
-        step=1.0
-    )
-
-    umbral_amarillo = st.number_input(
-        "Semáforo amarillo hasta +/- %",
-        min_value=0.0,
-        value=10.0,
-        step=1.0
-    )
-
-    calcular = st.form_submit_button("Calcular")
+    calcular = st.form_submit_button("Calcular validación")
 
 
 if "historial" not in st.session_state:
@@ -303,137 +374,107 @@ if calcular:
         dias_alimentados
     )
 
-    biomasa_por_alimento_sugerido = safe_div(
+    biomasa_sugerida = safe_div(
         kg_sugerido,
         bw_sug
     )
 
-    biomasa_por_alimento_minimo = safe_div(
+    biomasa_minima = safe_div(
         kg_minimo,
         bw_min
     )
 
-    biomasa_por_alimento_actual = safe_div(
+    biomasa_actual = safe_div(
         kg_diario_actual,
         bw_sug
     )
 
     animales_an = safe_div(
-        biomasa_por_alimento_sugerido * 1000,
+        biomasa_sugerida * 1000,
         peso_actual
     )
 
     animales_ap = safe_div(
-        biomasa_por_alimento_minimo * 1000,
+        biomasa_minima * 1000,
         peso_actual
     )
 
     animales_ao = safe_div(
-        biomasa_por_alimento_actual * 1000,
+        biomasa_actual * 1000,
         peso_actual
     )
 
     dif_ao_al = animales_ao - animales_vivos if animales_vivos else np.nan
     dif_ao_al_pct = safe_div(dif_ao_al, animales_vivos) * 100 if animales_vivos else np.nan
 
-    def semaforo(pct):
-        if pd.isna(pct):
-            return "⚪ Sin referencia"
+    if pd.isna(dif_ao_al_pct):
+        estado = "⚪ Sin referencia"
+    elif abs(dif_ao_al_pct) <= 5:
+        estado = "🟢 Verde"
+    elif abs(dif_ao_al_pct) <= 10:
+        estado = "🟡 Amarillo"
+    else:
+        estado = "🔴 Rojo"
 
-        if abs(pct) <= umbral_verde:
-            return "🟢 Verde"
+    st.subheader("Resultado de validación")
 
-        if abs(pct) <= umbral_amarillo:
-            return "🟡 Amarillo"
+    semaforo_html(estado)
 
-        return "🔴 Rojo"
+    metric_card("Diferencia entre alimentación actual y animales reportados", f"{dif_ao_al:,.0f}")
+    metric_card("Diferencia porcentual", f"{dif_ao_al_pct:.2f}%")
 
-    estado = semaforo(dif_ao_al_pct)
-
-    st.subheader("Resultados")
-    st.markdown(f"## {estado}")
+    st.subheader("Resumen principal")
 
     c1, c2 = st.columns(2)
-
-    c1.metric(
-        "BW sugerida",
-        f"{bw_sug * 100:.2f}%"
-    )
-
-    c2.metric(
-        "BW mínima",
-        f"{bw_min * 100:.2f}%"
-    )
+    with c1:
+        metric_card("Animales según alimentación actual", f"{animales_ao:,.0f}")
+    with c2:
+        metric_card("Animales vivos reportados", f"{animales_vivos:,.0f}")
 
     c3, c4 = st.columns(2)
+    with c3:
+        metric_card("Kg alimento sugerido", f"{kg_sugerido:,.0f}")
+    with c4:
+        metric_card("Kg mínimo", f"{kg_minimo:,.0f}")
 
-    c3.metric(
-        "Kg alimento sugerido (U)",
-        f"{kg_sugerido:,.0f}"
-    )
-
-    c4.metric(
-        "Kg mínimo (V)",
-        f"{kg_minimo:,.0f}"
-    )
+    st.subheader("Detalle técnico")
 
     c5, c6 = st.columns(2)
-
-    c5.metric(
-        "Animales según alimentación sugerida (AN)",
-        f"{animales_an:,.0f}"
-    )
-
-    c6.metric(
-        "Animales según tabla 2 Min (AP)",
-        f"{animales_ap:,.0f}"
-    )
+    with c5:
+        metric_card("BW sugerida", f"{bw_sug * 100:.2f}%")
+    with c6:
+        metric_card("BW mínima", f"{bw_min * 100:.2f}%")
 
     c7, c8 = st.columns(2)
+    with c7:
+        metric_card("Animales según alimentación sugerida", f"{animales_an:,.0f}")
+    with c8:
+        metric_card("Animales según tabla 2 Min", f"{animales_ap:,.0f}")
 
-    c7.metric(
-        "Animales según alimentación actual (AO)",
-        f"{animales_ao:,.0f}"
-    )
-
-    c8.metric(
-        "Animales vivos reportados (AL)",
-        f"{animales_vivos:,.0f}"
-    )
-
-    if not pd.isna(dif_ao_al_pct):
-        st.metric(
-            "Diferencia AO vs AL",
-            f"{dif_ao_al:,.0f}",
-            f"{dif_ao_al_pct:.2f}%"
-        )
+    metric_card("Kg diario actual", f"{kg_diario_actual:,.2f} kg/día")
 
     st.caption(
-        f"BUSCARV aproximado: BW sugerida usa peso {peso_ref_normal} g | BW mínima usa peso {peso_ref_min} g"
-    )
-
-    st.caption(
-        f"Kg diario actual calculado: {kg_diario_actual:,.2f} kg/día"
+        f"Referencia usada: BW sugerida con peso {peso_ref_normal} g | BW mínima con peso {peso_ref_min} g"
     )
 
     registro = {
         "Fecha": fecha.isoformat(),
-        "PSC": psc,
+        "Piscina / PSC": psc,
         "Marca alimento": marca,
         "Peso actual": peso_actual,
         "Kg alimento semanal actual": kg_alimento_actual,
         "Días alimentados": dias_alimentados,
         "Kg diario actual": kg_diario_actual,
-        "Animales vivos reportados (AL)": animales_vivos,
+        "Animales vivos reportados": animales_vivos,
         "Supervivencia %": supervivencia,
         "Época": epoca,
         "BW sugerida %": bw_sug * 100,
         "BW mínima %": bw_min * 100,
-        "Kg alimento sugerido (U)": kg_sugerido,
-        "Kg mínimo (V)": kg_minimo,
-        "Animales según alimentación sugerida (AN)": animales_an,
-        "Animales según alimentación actual (AO)": animales_ao,
-        "Animales según tabla 2 Min (AP)": animales_ap,
+        "Kg alimento sugerido": kg_sugerido,
+        "Kg mínimo": kg_minimo,
+        "Animales según alimentación sugerida": animales_an,
+        "Animales según alimentación actual": animales_ao,
+        "Animales según tabla 2 Min": animales_ap,
         "Diferencia AO vs AL": dif_ao_al,
         "Diferencia AO vs AL %": dif_ao_al_pct,
         "Semáforo": estado,
@@ -449,12 +490,11 @@ if st.session_state.historial:
 
     st.dataframe(
         hist,
-        width="stretch",
         hide_index=True
     )
 
     st.download_button(
-        "Descargar historial CSV",
+        "Descargar historial",
         data=hist.to_csv(index=False).encode("utf-8-sig"),
         file_name="historial_validacion_consumo.csv",
         mime="text/csv",
