@@ -132,6 +132,10 @@ def load_tables_from_bytes(file_bytes):
 
     ws = wb[sheet_name]
 
+    # Hoja Tabla:
+    # A = Peso
+    # B = Normal Frío
+    # C = Normal Calor
     normal_rows = []
 
     for row in ws.iter_rows(
@@ -155,6 +159,10 @@ def load_tables_from_bytes(file_bytes):
             }
         )
 
+    # Hoja Tabla:
+    # F = Peso
+    # G = Min Calor
+    # H = Min Frío
     min_rows = []
 
     for row in ws.iter_rows(
@@ -205,6 +213,12 @@ def safe_div(a, b):
     return a / b
 
 
+def fmt_num(value, decimals=0):
+    if pd.isna(value):
+        return "-"
+    return f"{value:,.{decimals}f}"
+
+
 def metric_card(label, value):
     st.markdown(
         f"""
@@ -235,6 +249,41 @@ def semaforo_html(estado):
         """,
         unsafe_allow_html=True
     )
+
+
+def estado_por_diferencia(pct):
+    if pd.isna(pct):
+        return "⚪ Sin referencia"
+
+    if abs(pct) <= 5:
+        return "🟢 Verde"
+
+    if abs(pct) <= 10:
+        return "🟡 Amarillo"
+
+    return "🔴 Rojo"
+
+
+def calcular_bw(epoca, peso_actual, normal_table, min_table):
+    # CORREGIDO:
+    # Normal: B = Frío, C = Calor
+    # Mínima: G = Min Calor, H = Min Frío
+    normal_col = "NormalCalor" if epoca == "Calor" else "NormalFrio"
+    min_col = "MinCalor" if epoca == "Calor" else "MinFrio"
+
+    bw_sug, peso_ref_normal = vlookup_approx(
+        normal_table,
+        peso_actual,
+        normal_col
+    )
+
+    bw_min, peso_ref_min = vlookup_approx(
+        min_table,
+        peso_actual,
+        min_col
+    )
+
+    return bw_sug, bw_min, peso_ref_normal, peso_ref_min
 
 
 st.markdown("<div class='main-title'>🦐 Validación de Consumo</div>", unsafe_allow_html=True)
@@ -282,206 +331,583 @@ except Exception as exc:
 
 
 with st.expander("Ver tablas de referencia", expanded=False):
-    st.write("Tabla Normal")
+    st.write("Tabla Normal: A = Peso, B = Normal Frío, C = Normal Calor")
     st.dataframe(normal_table, hide_index=True)
 
-    st.write("Tabla Mínima")
+    st.write("Tabla Mínima: F = Peso, G = Min Calor, H = Min Frío")
     st.dataframe(min_table, hide_index=True)
 
 
-st.subheader("Ingreso de datos")
-
-with st.form("validacion_form"):
-    fecha = st.date_input("Fecha", value=date.today())
-
-    psc = st.text_input("Piscina / PSC", value="")
-
-    marca = st.text_input("Marca alimento", value="")
-
-    peso_actual = st.number_input(
-        "Peso actual (g)",
-        min_value=0.01,
-        value=3.50,
-        step=0.10,
-        format="%.2f"
-    )
-
-    kg_alimento_actual = st.number_input(
-        "Kg alimento semanal actual",
-        min_value=0.0,
-        value=0.0,
-        step=1.0
-    )
-
-    dias_alimentados = st.number_input(
-        "Días alimentados",
-        min_value=1.0,
-        value=7.0,
-        step=1.0
-    )
-
-    animales_vivos = st.number_input(
-        "Animales vivos reportados",
-        min_value=0.0,
-        value=0.0,
-        step=1000.0
-    )
-
-    supervivencia = st.number_input(
-        "Supervivencia (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=80.0,
-        step=1.0
-    )
-
-    epoca = st.radio(
-        "Época",
-        ["Calor", "Frío"],
-        horizontal=True
-    )
-
-    calcular = st.form_submit_button("Calcular validación")
+escenario = st.radio(
+    "¿Qué quieres calcular?",
+    [
+        "1. Validar población reportada",
+        "2. Estimar población por consumo",
+        "3. Estimar densidad por consumo diario"
+    ]
+)
 
 
 if "historial" not in st.session_state:
     st.session_state.historial = []
 
 
-if calcular:
-    normal_col = "NormalFrio" if epoca == "Calor" else "NormalCalor"
-    min_col = "MinCalor" if epoca == "Calor" else "MinFrio"
+if escenario == "1. Validar población reportada":
+    st.subheader("Escenario 1: Validar población reportada")
 
-    bw_sug, peso_ref_normal = vlookup_approx(
-        normal_table,
-        peso_actual,
-        normal_col
-    )
+    with st.form("form_validar"):
+        fecha = st.date_input("Fecha", value=date.today())
 
-    bw_min, peso_ref_min = vlookup_approx(
-        min_table,
-        peso_actual,
-        min_col
-    )
+        psc = st.text_input("Piscina / PSC", value="")
 
-    biomasa_reportada = animales_vivos * peso_actual / 1000
+        marca = st.text_input("Marca alimento", value="")
 
-    kg_sugerido = biomasa_reportada * bw_sug
-    kg_minimo = biomasa_reportada * bw_min
+        area_ha = st.number_input(
+            "Área del estanque (ha)",
+            min_value=0.0,
+            value=0.0,
+            step=0.10,
+            format="%.2f"
+        )
 
-    kg_diario_actual = safe_div(
-        kg_alimento_actual,
-        dias_alimentados
-    )
+        densidad_siembra_m2 = st.number_input(
+            "Densidad inicial de siembra (cam/m²)",
+            min_value=0.0,
+            value=0.0,
+            step=0.10,
+            format="%.2f"
+        )
 
-    biomasa_sugerida = safe_div(
-        kg_sugerido,
-        bw_sug
-    )
+        peso_actual = st.number_input(
+            "Peso actual (g)",
+            min_value=0.01,
+            value=3.50,
+            step=0.10,
+            format="%.2f"
+        )
 
-    biomasa_minima = safe_div(
-        kg_minimo,
-        bw_min
-    )
+        kg_alimento_actual = st.number_input(
+            "Kg alimento semanal actual",
+            min_value=0.0,
+            value=0.0,
+            step=1.0
+        )
 
-    biomasa_actual = safe_div(
-        kg_diario_actual,
-        bw_sug
-    )
+        dias_alimentados = st.number_input(
+            "Días alimentados",
+            min_value=1.0,
+            value=7.0,
+            step=1.0
+        )
 
-    animales_an = safe_div(
-        biomasa_sugerida * 1000,
-        peso_actual
-    )
+        animales_vivos = st.number_input(
+            "Animales vivos reportados en campo",
+            min_value=0.0,
+            value=0.0,
+            step=1000.0
+        )
 
-    animales_ap = safe_div(
-        biomasa_minima * 1000,
-        peso_actual
-    )
+        epoca = st.radio(
+            "Época",
+            ["Calor", "Frío"],
+            horizontal=True
+        )
 
-    animales_ao = safe_div(
-        biomasa_actual * 1000,
-        peso_actual
-    )
+        calcular = st.form_submit_button("Calcular validación")
 
-    dif_ao_al = animales_ao - animales_vivos if animales_vivos else np.nan
-    dif_ao_al_pct = safe_div(dif_ao_al, animales_vivos) * 100 if animales_vivos else np.nan
+    if calcular:
+        bw_sug, bw_min, peso_ref_normal, peso_ref_min = calcular_bw(
+            epoca,
+            peso_actual,
+            normal_table,
+            min_table
+        )
 
-    if pd.isna(dif_ao_al_pct):
-        estado = "⚪ Sin referencia"
-    elif abs(dif_ao_al_pct) <= 5:
-        estado = "🟢 Verde"
-    elif abs(dif_ao_al_pct) <= 10:
-        estado = "🟡 Amarillo"
-    else:
-        estado = "🔴 Rojo"
+        area_m2 = area_ha * 10000
+        animales_sembrados = area_m2 * densidad_siembra_m2
 
-    st.subheader("Resultado de validación")
+        biomasa_reportada = animales_vivos * peso_actual / 1000
 
-    semaforo_html(estado)
+        kg_sugerido = biomasa_reportada * bw_sug
+        kg_minimo = biomasa_reportada * bw_min
 
-    metric_card("Diferencia entre alimentación actual y animales reportados", f"{dif_ao_al:,.0f}")
-    metric_card("Diferencia porcentual", f"{dif_ao_al_pct:.2f}%")
+        kg_diario_actual = safe_div(
+            kg_alimento_actual,
+            dias_alimentados
+        )
 
-    st.subheader("Resumen principal")
+        # Kg alimento sugerido ya es DIARIO.
+        # No se divide para días alimentados.
+        kg_diario_sugerido = kg_sugerido
 
-    c1, c2 = st.columns(2)
-    with c1:
-        metric_card("Animales según alimentación actual", f"{animales_ao:,.0f}")
-    with c2:
-        metric_card("Animales vivos reportados", f"{animales_vivos:,.0f}")
+        kg_100k_finca = safe_div(
+            kg_diario_actual,
+            safe_div(animales_vivos, 100000)
+        )
 
-    c3, c4 = st.columns(2)
-    with c3:
-        metric_card("Kg alimento sugerido", f"{kg_sugerido:,.0f}")
-    with c4:
-        metric_card("Kg mínimo", f"{kg_minimo:,.0f}")
+        kg_100k_sugerido = safe_div(
+            kg_diario_sugerido,
+            safe_div(animales_vivos, 100000)
+        )
 
-    st.subheader("Detalle técnico")
+        biomasa_actual = safe_div(
+            kg_diario_actual,
+            bw_sug
+        )
 
-    c5, c6 = st.columns(2)
-    with c5:
-        metric_card("BW sugerida", f"{bw_sug * 100:.2f}%")
-    with c6:
-        metric_card("BW mínima", f"{bw_min * 100:.2f}%")
+        animales_ao = safe_div(
+            biomasa_actual * 1000,
+            peso_actual
+        )
 
-    c7, c8 = st.columns(2)
-    with c7:
-        metric_card("Animales según alimentación sugerida", f"{animales_an:,.0f}")
-    with c8:
-        metric_card("Animales según tabla 2 Min", f"{animales_ap:,.0f}")
+        biomasa_sugerida = safe_div(
+            kg_sugerido,
+            bw_sug
+        )
 
-    metric_card("Kg diario actual", f"{kg_diario_actual:,.2f} kg/día")
+        biomasa_minima = safe_div(
+            kg_minimo,
+            bw_min
+        )
 
-    st.caption(
-        f"Referencia usada: BW sugerida con peso {peso_ref_normal} g | BW mínima con peso {peso_ref_min} g"
-    )
+        animales_an = safe_div(
+            biomasa_sugerida * 1000,
+            peso_actual
+        )
 
-    registro = {
-        "Fecha": fecha.isoformat(),
-        "Piscina / PSC": psc,
-        "Marca alimento": marca,
-        "Peso actual": peso_actual,
-        "Kg alimento semanal actual": kg_alimento_actual,
-        "Días alimentados": dias_alimentados,
-        "Kg diario actual": kg_diario_actual,
-        "Animales vivos reportados": animales_vivos,
-        "Supervivencia %": supervivencia,
-        "Época": epoca,
-        "BW sugerida %": bw_sug * 100,
-        "BW mínima %": bw_min * 100,
-        "Kg alimento sugerido": kg_sugerido,
-        "Kg mínimo": kg_minimo,
-        "Animales según alimentación sugerida": animales_an,
-        "Animales según alimentación actual": animales_ao,
-        "Animales según tabla 2 Min": animales_ap,
-        "Diferencia AO vs AL": dif_ao_al,
-        "Diferencia AO vs AL %": dif_ao_al_pct,
-        "Semáforo": estado,
-    }
+        animales_ap = safe_div(
+            biomasa_minima * 1000,
+            peso_actual
+        )
 
-    st.session_state.historial.append(registro)
+        densidad_inicial_m2 = densidad_siembra_m2
 
+        densidad_reportada_m2 = safe_div(
+            animales_vivos,
+            area_m2
+        )
+
+        densidad_actual_m2 = safe_div(
+            animales_ao,
+            area_m2
+        )
+
+        supervivencia_reportada = safe_div(
+            animales_vivos,
+            animales_sembrados
+        ) * 100 if animales_sembrados else np.nan
+
+        supervivencia_estimada = safe_div(
+            animales_ao,
+            animales_sembrados
+        ) * 100 if animales_sembrados else np.nan
+
+        dif_ao_al = animales_ao - animales_vivos if animales_vivos else np.nan
+        dif_ao_al_pct = safe_div(dif_ao_al, animales_vivos) * 100 if animales_vivos else np.nan
+
+        estado = estado_por_diferencia(dif_ao_al_pct)
+
+        st.subheader("Resultado de validación")
+        semaforo_html(estado)
+
+        metric_card("Diferencia entre alimentación actual y animales reportados", fmt_num(dif_ao_al, 0))
+        metric_card("Diferencia porcentual", f"{fmt_num(dif_ao_al_pct, 2)}%")
+
+        st.subheader("Resumen principal")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            metric_card("Animales según alimentación actual", fmt_num(animales_ao, 0))
+        with c2:
+            metric_card("Animales vivos reportados", fmt_num(animales_vivos, 0))
+
+        c3, c4 = st.columns(2)
+        with c3:
+            metric_card("Animales sembrados iniciales", fmt_num(animales_sembrados, 0))
+        with c4:
+            metric_card("Área del estanque", f"{fmt_num(area_ha, 2)} ha")
+
+        st.subheader("Indicadores de alimento")
+
+        c5, c6 = st.columns(2)
+        with c5:
+            metric_card("Kg/100.000 animales Finca", f"{fmt_num(kg_100k_finca, 2)} kg/día")
+        with c6:
+            metric_card("Kg/100.000 animales Sugerido", f"{fmt_num(kg_100k_sugerido, 2)} kg/día")
+
+        st.subheader("Densidad y supervivencia")
+
+        c5b, c6b = st.columns(2)
+        with c5b:
+            metric_card("Densidad inicial", f"{fmt_num(densidad_inicial_m2, 2)} cam/m²")
+        with c6b:
+            metric_card("Densidad actual estimada", f"{fmt_num(densidad_actual_m2, 2)} cam/m²")
+
+        c7, c8 = st.columns(2)
+        with c7:
+            metric_card("Densidad reportada en campo", f"{fmt_num(densidad_reportada_m2, 2)} cam/m²")
+        with c8:
+            metric_card("Supervivencia estimada por consumo", f"{fmt_num(supervivencia_estimada, 2)}%")
+
+        c9, c10 = st.columns(2)
+        with c9:
+            metric_card("Supervivencia reportada campo", f"{fmt_num(supervivencia_reportada, 2)}%")
+        with c10:
+            metric_card("Kg diario actual", f"{fmt_num(kg_diario_actual, 2)} kg/día")
+
+        st.subheader("Detalle técnico")
+
+        c11, c12 = st.columns(2)
+        with c11:
+            metric_card("BW sugerida", f"{fmt_num(bw_sug * 100, 2)}%")
+        with c12:
+            metric_card("BW mínima", f"{fmt_num(bw_min * 100, 2)}%")
+
+        c13, c14 = st.columns(2)
+        with c13:
+            metric_card("Kg alimento sugerido diario", fmt_num(kg_sugerido, 0))
+        with c14:
+            metric_card("Kg mínimo diario", fmt_num(kg_minimo, 0))
+
+        c15, c16 = st.columns(2)
+        with c15:
+            metric_card("Animales según alimentación sugerida", fmt_num(animales_an, 0))
+        with c16:
+            metric_card("Animales según tabla 2 Min", fmt_num(animales_ap, 0))
+
+        st.caption(
+            f"Referencia usada: BW sugerida con peso {peso_ref_normal} g | BW mínima con peso {peso_ref_min} g"
+        )
+
+        registro = {
+            "Escenario": "Validar población reportada",
+            "Fecha": fecha.isoformat(),
+            "Piscina / PSC": psc,
+            "Marca alimento": marca,
+            "Área ha": area_ha,
+            "Área m2": area_m2,
+            "Densidad inicial cam/m2": densidad_siembra_m2,
+            "Animales sembrados iniciales": animales_sembrados,
+            "Peso actual": peso_actual,
+            "Kg alimento semanal actual": kg_alimento_actual,
+            "Días alimentados": dias_alimentados,
+            "Kg diario actual": kg_diario_actual,
+            "Kg diario sugerido": kg_diario_sugerido,
+            "Kg/100k finca": kg_100k_finca,
+            "Kg/100k sugerido": kg_100k_sugerido,
+            "Animales vivos reportados": animales_vivos,
+            "Densidad reportada cam/m2": densidad_reportada_m2,
+            "Densidad actual estimada cam/m2": densidad_actual_m2,
+            "Supervivencia reportada campo %": supervivencia_reportada,
+            "Supervivencia estimada por consumo %": supervivencia_estimada,
+            "Época": epoca,
+            "BW sugerida %": bw_sug * 100,
+            "BW mínima %": bw_min * 100,
+            "Kg alimento sugerido diario": kg_sugerido,
+            "Kg mínimo diario": kg_minimo,
+            "Animales según alimentación sugerida": animales_an,
+            "Animales según alimentación actual": animales_ao,
+            "Animales según tabla 2 Min": animales_ap,
+            "Diferencia AO vs AL": dif_ao_al,
+            "Diferencia AO vs AL %": dif_ao_al_pct,
+            "Semáforo": estado,
+        }
+
+        st.session_state.historial.append(registro)
+
+
+if escenario == "2. Estimar población por consumo":
+    st.subheader("Escenario 2: Estimar población por consumo")
+
+    with st.form("form_estimar"):
+        fecha = st.date_input("Fecha", value=date.today())
+
+        psc = st.text_input("Piscina / PSC", value="")
+
+        marca = st.text_input("Marca alimento", value="")
+
+        area_ha = st.number_input(
+            "Área del estanque (ha)",
+            min_value=0.0,
+            value=0.0,
+            step=0.10,
+            format="%.2f"
+        )
+
+        densidad_siembra_m2 = st.number_input(
+            "Densidad inicial de siembra (cam/m²)",
+            min_value=0.0,
+            value=0.0,
+            step=0.10,
+            format="%.2f"
+        )
+
+        peso_actual = st.number_input(
+            "Peso actual (g)",
+            min_value=0.01,
+            value=3.50,
+            step=0.10,
+            format="%.2f"
+        )
+
+        kg_alimento_actual = st.number_input(
+            "Kg alimento semanal actual",
+            min_value=0.0,
+            value=0.0,
+            step=1.0
+        )
+
+        dias_alimentados = st.number_input(
+            "Días alimentados",
+            min_value=1.0,
+            value=7.0,
+            step=1.0
+        )
+
+        epoca = st.radio(
+            "Época",
+            ["Calor", "Frío"],
+            horizontal=True
+        )
+
+        calcular = st.form_submit_button("Estimar población")
+
+    if calcular:
+        bw_sug, bw_min, peso_ref_normal, peso_ref_min = calcular_bw(
+            epoca,
+            peso_actual,
+            normal_table,
+            min_table
+        )
+
+        area_m2 = area_ha * 10000
+        animales_sembrados = area_m2 * densidad_siembra_m2
+
+        kg_diario_actual = safe_div(
+            kg_alimento_actual,
+            dias_alimentados
+        )
+
+        biomasa_actual = safe_div(
+            kg_diario_actual,
+            bw_sug
+        )
+
+        animales_estimados = safe_div(
+            biomasa_actual * 1000,
+            peso_actual
+        )
+
+        densidad_actual_m2 = safe_div(
+            animales_estimados,
+            area_m2
+        )
+
+        kg_100k_estimado = safe_div(
+            kg_diario_actual,
+            safe_div(animales_estimados, 100000)
+        )
+
+        supervivencia_estimada = safe_div(
+            animales_estimados,
+            animales_sembrados
+        ) * 100 if animales_sembrados else np.nan
+
+        dif_animales = animales_estimados - animales_sembrados if animales_sembrados else np.nan
+        dif_animales_pct = safe_div(dif_animales, animales_sembrados) * 100 if animales_sembrados else np.nan
+
+        estado = estado_por_diferencia(dif_animales_pct)
+
+        st.subheader("Resultado de estimación")
+        semaforo_html(estado)
+
+        st.subheader("Resumen principal")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            metric_card("Animales estimados por consumo", fmt_num(animales_estimados, 0))
+        with c2:
+            metric_card("Animales sembrados iniciales", fmt_num(animales_sembrados, 0))
+
+        c3, c4 = st.columns(2)
+        with c3:
+            metric_card("Densidad actual en agua", f"{fmt_num(densidad_actual_m2, 2)} cam/m²")
+        with c4:
+            metric_card("Densidad inicial de siembra", f"{fmt_num(densidad_siembra_m2, 2)} cam/m²")
+
+        c5, c6 = st.columns(2)
+        with c5:
+            metric_card("Supervivencia estimada", f"{fmt_num(supervivencia_estimada, 2)}%")
+        with c6:
+            metric_card("Área del estanque", f"{fmt_num(area_ha, 2)} ha")
+
+        st.subheader("Indicadores de alimento")
+        metric_card("Kg/100.000 animales estimado", f"{fmt_num(kg_100k_estimado, 2)} kg/día")
+
+        st.subheader("Detalle técnico")
+
+        c7, c8 = st.columns(2)
+        with c7:
+            metric_card("BW sugerida", f"{fmt_num(bw_sug * 100, 2)}%")
+        with c8:
+            metric_card("BW mínima", f"{fmt_num(bw_min * 100, 2)}%")
+
+        c9, c10 = st.columns(2)
+        with c9:
+            metric_card("Kg diario actual", f"{fmt_num(kg_diario_actual, 2)} kg/día")
+        with c10:
+            metric_card("Biomasa estimada", f"{fmt_num(biomasa_actual, 2)} kg")
+
+        st.caption(
+            f"Referencia usada: BW sugerida con peso {peso_ref_normal} g | BW mínima con peso {peso_ref_min} g"
+        )
+
+        registro = {
+            "Escenario": "Estimar población por consumo",
+            "Fecha": fecha.isoformat(),
+            "Piscina / PSC": psc,
+            "Marca alimento": marca,
+            "Área ha": area_ha,
+            "Área m2": area_m2,
+            "Densidad inicial cam/m2": densidad_siembra_m2,
+            "Animales sembrados iniciales": animales_sembrados,
+            "Peso actual": peso_actual,
+            "Kg alimento semanal actual": kg_alimento_actual,
+            "Días alimentados": dias_alimentados,
+            "Kg diario actual": kg_diario_actual,
+            "Kg/100k estimado": kg_100k_estimado,
+            "Época": epoca,
+            "BW sugerida %": bw_sug * 100,
+            "BW mínima %": bw_min * 100,
+            "Biomasa estimada kg": biomasa_actual,
+            "Animales estimados por consumo": animales_estimados,
+            "Densidad actual cam/m2": densidad_actual_m2,
+            "Supervivencia estimada %": supervivencia_estimada,
+            "Diferencia estimados vs sembrados": dif_animales,
+            "Diferencia estimados vs sembrados %": dif_animales_pct,
+            "Semáforo": estado,
+        }
+
+        st.session_state.historial.append(registro)
+
+
+
+if escenario == "3. Estimar densidad por consumo diario":
+    st.subheader("Escenario 3: Estimar densidad por consumo diario")
+
+    with st.form("form_densidad_consumo"):
+        fecha = st.date_input("Fecha", value=date.today())
+        psc = st.text_input("Piscina / PSC", value="")
+        marca = st.text_input("Marca alimento", value="")
+
+        area_ha = st.number_input(
+            "Área del estanque (ha)",
+            min_value=0.0,
+            value=0.0,
+            step=0.10,
+            format="%.2f"
+        )
+
+        peso_actual = st.number_input(
+            "Peso actual (g)",
+            min_value=0.01,
+            value=3.50,
+            step=0.10,
+            format="%.2f"
+        )
+
+        kg_diario_total = st.number_input(
+            "Kg diario total del estanque",
+            min_value=0.0,
+            value=0.0,
+            step=1.0
+        )
+
+        epoca = st.radio(
+            "Época",
+            ["Calor", "Frío"],
+            horizontal=True
+        )
+
+        calcular = st.form_submit_button("Estimar densidad")
+
+    if calcular:
+        bw_sug, bw_min, peso_ref_normal, peso_ref_min = calcular_bw(
+            epoca,
+            peso_actual,
+            normal_table,
+            min_table
+        )
+
+        area_m2 = area_ha * 10000
+
+        biomasa_estimada = safe_div(
+            kg_diario_total,
+            bw_sug
+        )
+
+        animales_estimados = safe_div(
+            biomasa_estimada * 1000,
+            peso_actual
+        )
+
+        densidad_actual_m2 = safe_div(
+            animales_estimados,
+            area_m2
+        )
+
+        kg_100k_estimado = safe_div(
+            kg_diario_total,
+            safe_div(animales_estimados, 100000)
+        )
+
+        st.subheader("Resultado de estimación")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            metric_card("Densidad actual en agua", f"{fmt_num(densidad_actual_m2, 2)} cam/m²")
+        with c2:
+            metric_card("Biomasa estimada", f"{fmt_num(biomasa_estimada, 2)} kg")
+
+        c3, c4 = st.columns(2)
+        with c3:
+            metric_card("Animales estimados", fmt_num(animales_estimados, 0))
+        with c4:
+            metric_card("Área del estanque", f"{fmt_num(area_ha, 2)} ha")
+
+        st.subheader("Detalle técnico")
+
+        c5, c6 = st.columns(2)
+        with c5:
+            metric_card("BW sugerida usada", f"{fmt_num(bw_sug * 100, 2)}%")
+        with c6:
+            metric_card("Kg diario total", f"{fmt_num(kg_diario_total, 2)} kg/día")
+
+        metric_card("Kg/100.000 animales estimado", f"{fmt_num(kg_100k_estimado, 2)} kg/día")
+
+        st.caption(
+            f"Referencia usada: BW sugerida con peso {peso_ref_normal} g | BW mínima con peso {peso_ref_min} g"
+        )
+
+        registro = {
+            "Escenario": "Estimar densidad por consumo diario",
+            "Fecha": fecha.isoformat(),
+            "Piscina / PSC": psc,
+            "Marca alimento": marca,
+            "Área ha": area_ha,
+            "Área m2": area_m2,
+            "Peso actual": peso_actual,
+            "Kg diario total": kg_diario_total,
+            "Época": epoca,
+            "BW sugerida %": bw_sug * 100,
+            "BW mínima %": bw_min * 100,
+            "Biomasa estimada kg": biomasa_estimada,
+            "Animales estimados": animales_estimados,
+            "Densidad actual cam/m2": densidad_actual_m2,
+            "Kg/100k estimado": kg_100k_estimado,
+        }
+
+        st.session_state.historial.append(registro)
 
 st.subheader("Historial de esta sesión")
 
