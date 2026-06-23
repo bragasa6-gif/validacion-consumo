@@ -5,7 +5,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from openpyxl import load_workbook
-
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(
     page_title="Validación de Consumo",
@@ -14,7 +15,7 @@ st.set_page_config(
 )
 
 BASE_FILE = "tabla_base.xlsx"
-
+SHEET_ID = st.secrets["SHEET_ID"]
 
 st.markdown(
     """
@@ -263,6 +264,29 @@ def estado_por_diferencia(pct):
 
     return "🔴 Rojo"
 
+def guardar_google_sheets(registro):
+    try:
+
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]),
+            scopes=scope
+        )
+
+        client = gspread.authorize(creds)
+
+        sheet = client.open_by_key(SHEET_ID).sheet1
+
+        fila = list(registro.values())
+
+        sheet.append_row(fila)
+
+    except Exception as e:
+        st.error(f"Error guardando en Google Sheets: {e}")
 
 def calcular_bw(epoca, peso_actual, normal_table, min_table):
     # CORREGIDO:
@@ -614,7 +638,7 @@ if escenario == "1. Validar población reportada":
         }
 
         st.session_state.historial.append(registro)
-
+guardar_google_sheets(registro)
 
 if escenario == "2. Estimar población por consumo":
     st.subheader("Escenario 2: Estimar población por consumo")
@@ -789,7 +813,7 @@ if escenario == "2. Estimar población por consumo":
         }
 
         st.session_state.historial.append(registro)
-
+guardar_google_sheets(registro)
 
 
 if escenario == "3. Estimar densidad por consumo diario":
@@ -908,6 +932,7 @@ if escenario == "3. Estimar densidad por consumo diario":
         }
 
         st.session_state.historial.append(registro)
+guardar_google_sheets(registro)
 
 st.subheader("Historial de esta sesión")
 
