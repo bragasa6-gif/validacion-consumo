@@ -638,7 +638,7 @@ if escenario == "1. Validar población reportada":
         }
 
         st.session_state.historial.append(registro)
-guardar_google_sheets(registro)
+
 
 if escenario == "2. Estimar población por consumo":
     st.subheader("Escenario 2: Estimar población por consumo")
