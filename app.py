@@ -638,7 +638,7 @@ if escenario == "1. Validar población reportada":
         }
 
         st.session_state.historial.append(registro)
-
+        guardar_google_sheets(registro)
 
 if escenario == "2. Estimar población por consumo":
     st.subheader("Escenario 2: Estimar población por consumo")
@@ -813,7 +813,7 @@ if escenario == "2. Estimar población por consumo":
         }
 
         st.session_state.historial.append(registro)
-guardar_google_sheets(registro)
+        guardar_google_sheets(registro)
 
 
 if escenario == "3. Estimar densidad por consumo diario":
@@ -932,7 +932,7 @@ if escenario == "3. Estimar densidad por consumo diario":
         }
 
         st.session_state.historial.append(registro)
-guardar_google_sheets(registro)
+        guardar_google_sheets(registro)
 
 st.subheader("Historial de esta sesión")
 
