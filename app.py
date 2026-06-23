@@ -272,10 +272,7 @@ def guardar_google_sheets(registro):
         ]
 
         service_account_info = dict(st.secrets["gcp_service_account"])
-        service_account_info["private_key"] = (
-            service_account_info["private_key"]
-            .replace("\\n", "\n")
-        )
+        service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
 
         creds = Credentials.from_service_account_info(
             service_account_info,
@@ -283,23 +280,22 @@ def guardar_google_sheets(registro):
         )
 
         client = gspread.authorize(creds)
-
         sheet = client.open_by_key(SHEET_ID).sheet1
 
-fila = [
-    registro.get("Fecha", ""),
-    registro.get("Escenario", ""),
-    registro.get("Piscina / PSC", ""),
-    registro.get("Marca alimento", ""),
-    registro.get("Área ha", ""),
-    registro.get("Peso actual", ""),
-    registro.get("Kg alimento semanal actual", registro.get("Kg diario total", "")),
-    registro.get("Días alimentados", ""),
-    registro.get("Animales vivos reportados", registro.get("Animales estimados", "")),
-    registro.get("Densidad actual cam/m2", registro.get("Densidad actual estimada cam/m2", "")),
-    registro.get("Biomasa estimada kg", ""),
-    registro.get("Semáforo", ""),
-]
+        fila = [
+            registro.get("Fecha", ""),
+            registro.get("Escenario", ""),
+            registro.get("Piscina / PSC", ""),
+            registro.get("Marca alimento", ""),
+            registro.get("Área ha", ""),
+            registro.get("Peso actual", ""),
+            registro.get("Kg alimento semanal actual", registro.get("Kg diario total", "")),
+            registro.get("Días alimentados", ""),
+            registro.get("Animales vivos reportados", registro.get("Animales estimados", "")),
+            registro.get("Densidad actual cam/m2", registro.get("Densidad actual estimada cam/m2", "")),
+            registro.get("Biomasa estimada kg", ""),
+            registro.get("Semáforo", ""),
+        ]
 
         sheet.append_row(fila)
 
