@@ -266,14 +266,19 @@ def estado_por_diferencia(pct):
 
 def guardar_google_sheets(registro):
     try:
-
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
 
+        service_account_info = dict(st.secrets["gcp_service_account"])
+        service_account_info["private_key"] = (
+            service_account_info["private_key"]
+            .replace("\\n", "\n")
+        )
+
         creds = Credentials.from_service_account_info(
-            dict(st.secrets["gcp_service_account"]),
+            service_account_info,
             scopes=scope
         )
 
